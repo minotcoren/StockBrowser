@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tableau Interactif</title>
+  <link rel="stylesheet" href="./styles.css?v=14" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js"></script>
+  <script defer src="./configs.js?v=2"></script>
+  <script defer src="./app.js?v=14"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Tableau Interactif</h1>
+      <p>Importe un fichier Excel ou CSV, applique un preset, filtre et explore les données.</p>
+    </header>
+
+    <section class="card upload-card">
+      <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" />
+    </section>
+
+    <section id="controls" class="toolbar hidden">
+      <div class="toolbar-left">
+        <div class="column-picker">
+          <input type="search" id="columnSearchInput" placeholder="Rechercher colonne..." />
+          <select id="columnsSelect"></select>
+          <button id="toggleFavoriteColumnBtn" class="btn icon-btn" title="Ajouter aux favoris">☆</button>
+        </div>
+        <button id="addColumnBtn" class="btn">Ajouter colonne</button>
+        <button id="openConfigsBtn" class="btn">Configs</button>
+        <button id="resetBtn" class="btn secondary">Reset</button>
+      </div>
+
+      <p id="resultCount" class="result-count"></p>
+    </section>
+
+    <section class="table-card">
+      <table id="dataTable" class="hidden">
+        <thead id="tableHeader"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <div id="configModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="configModalTitle">
+    <div class="modal">
+      <header class="modal-header">
+        <h2 id="configModalTitle">Configurations</h2>
+      </header>
+
+      <div class="modal-content">
+        <label for="configSelect">Choisir un preset</label>
+        <select id="configSelect"></select>
+
+        <details>
+          <summary>Voir le détail du preset</summary>
+          <pre id="configPreview"></pre>
+        </details>
+      </div>
+
+      <footer class="modal-footer">
+        <button id="closeConfigsBtn" class="btn secondary">Annuler</button>
+        <button id="applyConfigBtn" class="btn primary">Appliquer</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="infoModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+    <div class="modal info-modal">
+      <header class="modal-header">
+        <h2 id="infoModalTitle">Informations</h2>
+      </header>
+
+      <div class="modal-content">
+        <p id="infoStatus" class="info-status"></p>
+        <p id="infoSummary" class="info-summary"></p>
+        <a id="infoSourceLink" class="info-source hidden" href="#" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>
+      </div>
+
+      <footer class="modal-footer">
+        <button id="closeInfoBtn" class="btn primary">Fermer</button>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
