@@ -521,6 +521,20 @@ td {
   gap: 12px;
 }
 
+.config-actions {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.config-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .info-status {
   margin: 0;
   color: var(--muted);

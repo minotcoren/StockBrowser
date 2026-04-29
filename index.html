@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tableau Interactif</title>
-  <link rel="stylesheet" href="./styles.css?v=14" />
+  <link rel="stylesheet" href="./styles.css?v=15" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js"></script>
   <script defer src="./configs.js?v=2"></script>
-  <script defer src="./app.js?v=14"></script>
+  <script defer src="./app.js?v=15"></script>
 </head>
 <body>
   <main class="app">
@@ -52,6 +52,15 @@
       <div class="modal-content">
         <label for="configSelect">Choisir un preset</label>
         <select id="configSelect"></select>
+
+        <div class="config-actions">
+          <input type="text" id="configNameInput" placeholder="Nom de la config..." />
+          <button id="saveConfigBtn" class="btn">Sauvegarder</button>
+          <button id="setDefaultConfigBtn" class="btn secondary">Defaut</button>
+          <button id="deleteConfigBtn" class="btn danger">Supprimer</button>
+        </div>
+
+        <p id="defaultConfigLabel" class="config-note"></p>
 
         <details>
           <summary>Voir le détail du preset</summary>

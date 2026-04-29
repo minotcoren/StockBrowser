@@ -28,6 +28,11 @@ const closeConfigsBtn = $("closeConfigsBtn");
 const applyConfigBtn = $("applyConfigBtn");
 const configSelect = $("configSelect");
 const configPreview = $("configPreview");
+const configNameInput = $("configNameInput");
+const saveConfigBtn = $("saveConfigBtn");
+const setDefaultConfigBtn = $("setDefaultConfigBtn");
+const deleteConfigBtn = $("deleteConfigBtn");
+const defaultConfigLabel = $("defaultConfigLabel");
 const infoModalBackdrop = $("infoModalBackdrop");
 const closeInfoBtn = $("closeInfoBtn");
 const infoModalTitle = $("infoModalTitle");
@@ -52,7 +57,17 @@ const COMPUTED_COLUMNS = [
 ];
 
 const FAVORITE_COLUMNS_STORAGE_KEY = "tableauInteractif.favoriteColumns";
+const CUSTOM_CONFIGS_STORAGE_KEY = "tableauInteractif.customConfigs";
+const DEFAULT_CONFIG_STORAGE_KEY = "tableauInteractif.defaultConfig";
 const favoriteColumns = loadFavoriteColumns();
+let customConfigs = loadCustomConfigs();
+
+function getAllConfigs() {
+  return {
+    ...CONFIGS,
+    ...customConfigs
+  };
+}
 
 excelFileInput.addEventListener("change", handleFile);
 columnSearchInput.addEventListener("input", updateColumnsSelect);
@@ -65,6 +80,9 @@ openConfigsBtn.addEventListener("click", openConfigModal);
 closeConfigsBtn.addEventListener("click", closeConfigModal);
 configSelect.addEventListener("change", updateConfigPreview);
 applyConfigBtn.addEventListener("click", applySelectedConfig);
+saveConfigBtn.addEventListener("click", saveCurrentConfig);
+setDefaultConfigBtn.addEventListener("click", setSelectedConfigAsDefault);
+deleteConfigBtn.addEventListener("click", deleteSelectedCustomConfig);
 closeInfoBtn.addEventListener("click", closeInfoModal);
 
 configModalBackdrop.addEventListener("click", e => {
@@ -124,7 +142,9 @@ function handleFile(e) {
       state.currentSort = { column: null, order: null };
       state.filters = {};
 
-      const defaultConfig = CONFIGS["Master Filtre"];
+      const configs = getAllConfigs();
+      const defaultConfigName = getDefaultConfigName();
+      const defaultConfig = configs[defaultConfigName] || configs["Master Filtre"];
 
       if (defaultConfig) {
         applyConfig(defaultConfig);
@@ -220,6 +240,33 @@ function saveFavoriteColumns() {
     FAVORITE_COLUMNS_STORAGE_KEY,
     JSON.stringify(Array.from(favoriteColumns))
   );
+}
+
+function loadCustomConfigs() {
+  try {
+    const stored = localStorage.getItem(CUSTOM_CONFIGS_STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCustomConfigs() {
+  localStorage.setItem(
+    CUSTOM_CONFIGS_STORAGE_KEY,
+    JSON.stringify(customConfigs)
+  );
+}
+
+function getDefaultConfigName() {
+  return localStorage.getItem(DEFAULT_CONFIG_STORAGE_KEY) || "Master Filtre";
+}
+
+function setDefaultConfigName(name) {
+  localStorage.setItem(DEFAULT_CONFIG_STORAGE_KEY, name);
 }
 
 function enrichDataWithComputedColumns() {
@@ -635,7 +682,7 @@ function applyConfig(config, options = {}) {
 
 function applySelectedConfig() {
   const name = configSelect.value;
-  const config = CONFIGS[name];
+  const config = getAllConfigs()[name];
 
   if (!config) return;
 
@@ -654,18 +701,26 @@ function applySelectedConfig() {
 
 function openConfigModal() {
   lastFocusedElement = document.activeElement;
-  configSelect.innerHTML = "";
-
-  Object.keys(CONFIGS).forEach(name => {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    configSelect.appendChild(option);
-  });
-
+  populateConfigSelect();
   updateConfigPreview();
   configModalBackdrop.classList.remove("hidden");
   configSelect.focus();
+}
+
+function populateConfigSelect(selectedName = configSelect.value || getDefaultConfigName()) {
+  configSelect.innerHTML = "";
+  const configs = getAllConfigs();
+
+  Object.keys(configs).forEach(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name === getDefaultConfigName() ? `${name} (defaut)` : name;
+    configSelect.appendChild(option);
+  });
+
+  if (configs[selectedName]) {
+    configSelect.value = selectedName;
+  }
 }
 
 function closeConfigModal() {
@@ -675,7 +730,67 @@ function closeConfigModal() {
 
 function updateConfigPreview() {
   const name = configSelect.value;
-  configPreview.textContent = JSON.stringify(CONFIGS[name], null, 2);
+  const config = getAllConfigs()[name];
+
+  configNameInput.value = name || "";
+  configPreview.textContent = JSON.stringify(config || {}, null, 2);
+  defaultConfigLabel.textContent = getDefaultConfigName()
+    ? `Config appliquee a l'ouverture : ${getDefaultConfigName()}`
+    : "";
+  deleteConfigBtn.disabled = !customConfigs[name];
+}
+
+function saveCurrentConfig() {
+  const name = configNameInput.value.trim();
+
+  if (!name) {
+    alert("Donne un nom a la config.");
+    return;
+  }
+
+  customConfigs[name] = createConfigFromCurrentState();
+  saveCustomConfigs();
+  populateConfigSelect(name);
+  updateConfigPreview();
+}
+
+function createConfigFromCurrentState() {
+  const filters = {};
+
+  state.displayedColumns.forEach(col => {
+    filters[col] = { ...(state.filters[col] || {}) };
+  });
+
+  return {
+    columns: state.displayedColumns.slice(),
+    filters,
+    sort: { ...state.currentSort }
+  };
+}
+
+function setSelectedConfigAsDefault() {
+  const name = configSelect.value;
+  if (!getAllConfigs()[name]) return;
+
+  setDefaultConfigName(name);
+  populateConfigSelect(name);
+  updateConfigPreview();
+}
+
+function deleteSelectedCustomConfig() {
+  const name = configSelect.value;
+
+  if (!customConfigs[name]) return;
+
+  delete customConfigs[name];
+  saveCustomConfigs();
+
+  if (getDefaultConfigName() === name) {
+    setDefaultConfigName("Master Filtre");
+  }
+
+  populateConfigSelect();
+  updateConfigPreview();
 }
 
 function addSelectedColumn() {
