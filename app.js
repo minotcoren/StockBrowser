@@ -3,24 +3,56 @@
   allColumns: [],
   displayedColumns: ["Ticker"],
   filters: {},
+  exchangeFilter: new Set(),
   hiddenRows: new Set(),
   currentSort: { column: null, order: null },
-  expandedRows: new Set()
+  expandedRows: new Set(),
+  viewMode: "table",
+  scatterColumns: [],
+  scatterTrendline: false,
+  scatterZeroLines: true,
+  scatterColorByRecommendation: true,
+  scatterPointSize: 5.2
 };
 
 const $ = id => document.getElementById(id);
 
 const excelFileInput = $("excelFile");
+const columnsModalBackdrop = $("columnsModalBackdrop");
 const columnSearchInput = $("columnSearchInput");
-const columnsSelect = $("columnsSelect");
-const toggleFavoriteColumnBtn = $("toggleFavoriteColumnBtn");
-const addColumnBtn = $("addColumnBtn");
+const columnOptionsList = $("columnOptionsList");
+const selectedColumnsList = $("selectedColumnsList");
+const columnPickerStatus = $("columnPickerStatus");
+const closeColumnsBtn = $("closeColumnsBtn");
+const applyColumnsBtn = $("applyColumnsBtn");
+const clearDraftColumnsBtn = $("clearDraftColumnsBtn");
 const controls = $("controls");
 const dataTable = $("dataTable");
 const tableHeader = $("tableHeader");
 const tableBody = $("tableBody");
 const resultCount = $("resultCount");
 const resetBtn = $("resetBtn");
+const tableViewBtn = $("tableViewBtn");
+const scatterViewBtn = $("scatterViewBtn");
+const openAxesBtn = $("openAxesBtn");
+const scatterView = $("scatterView");
+const scatterPlot = $("scatterPlot");
+const scatterHint = $("scatterHint");
+const scatterTooltip = $("scatterTooltip");
+const invertAxesBtn = $("invertAxesBtn");
+const trendlineToggle = $("trendlineToggle");
+const trendlineStats = $("trendlineStats");
+const zeroLinesToggle = $("zeroLinesToggle");
+const recommendationColorsToggle = $("recommendationColorsToggle");
+const pointSizeInput = $("pointSizeInput");
+const axesModalBackdrop = $("axesModalBackdrop");
+const axisSearchInput = $("axisSearchInput");
+const axisOptionsList = $("axisOptionsList");
+const selectedAxesList = $("selectedAxesList");
+const axisPickerStatus = $("axisPickerStatus");
+const closeAxesBtn = $("closeAxesBtn");
+const applyAxesBtn = $("applyAxesBtn");
+const clearDraftAxesBtn = $("clearDraftAxesBtn");
 
 const openConfigsBtn = $("openConfigsBtn");
 const configModalBackdrop = $("configModalBackdrop");
@@ -39,7 +71,25 @@ const infoModalTitle = $("infoModalTitle");
 const infoStatus = $("infoStatus");
 const infoSummary = $("infoSummary");
 const infoSourceLink = $("infoSourceLink");
+const openMarketsBtn = $("openMarketsBtn");
+const marketsModalBackdrop = $("marketsModalBackdrop");
+const marketMap = $("marketMap");
+const exchangeMapCountries = $("exchangeMapCountries");
+const exchangeMapLabels = $("exchangeMapLabels");
+const marketMapStatus = $("marketMapStatus");
+const closeMarketsBtn = $("closeMarketsBtn");
+const applyMarketsBtn = $("applyMarketsBtn");
+const clearMarketsBtn = $("clearMarketsBtn");
+const loadingOverlay = $("loadingOverlay");
+const loadingProgressBar = $("loadingProgressBar");
+const loadingStatus = $("loadingStatus");
+const loadingPercent = $("loadingPercent");
 let lastFocusedElement = null;
+let loadingTimer = null;
+let loadingStartedAt = 0;
+let draftExchangeFilter = new Set();
+let draftColumnsToAdd = new Set();
+let draftAxisColumns = new Set();
 
 const DETAIL_GROUPS = [
   { key: "financials", label: "Compte de resultat" },
@@ -56,9 +106,31 @@ const COMPUTED_COLUMNS = [
   "Bullish upside (%)"
 ];
 
+const EXCHANGE_COUNTRIES = {
+  AMS: { countryId: "528", country: "Pays-Bas", lonLat: [4.9, 52.37], labelOffset: [8, -8] },
+  BRU: { countryId: "056", country: "Belgique", lonLat: [4.35, 50.85], labelOffset: [12, 14] },
+  ISE: { countryId: "372", country: "Irlande", lonLat: [-6.26, 53.35], labelOffset: [0, 0] },
+  LIS: { countryId: "620", country: "Portugal", lonLat: [-9.14, 38.72], labelOffset: [0, 0] },
+  MIL: { countryId: "380", country: "Italie", lonLat: [9.19, 45.46], labelOffset: [18, -4] },
+  OSL: { countryId: "578", country: "Norvege", lonLat: [10.75, 59.91], labelOffset: [0, 0] },
+  PAR: { countryId: "250", country: "France", lonLat: [2.35, 48.86], labelOffset: [0, 0] },
+  YHD: { countryId: "826", country: "Royaume-Uni", lonLat: [-0.13, 51.51], labelOffset: [0, 0] }
+};
+
+const EUROPE_COUNTRY_IDS = new Set([
+  "008", "020", "040", "056", "070", "100", "191", "196", "203", "208",
+  "233", "246", "250", "276", "300", "348", "352", "372", "380", "428",
+  "438", "440", "442", "470", "498", "499", "528", "578", "616", "620",
+  "642", "688", "703", "705", "724", "752", "756", "807", "826"
+]);
+
+let exchangeMapFeatures = [];
+let exchangeMapRendered = false;
+
 const FAVORITE_COLUMNS_STORAGE_KEY = "tableauInteractif.favoriteColumns";
 const CUSTOM_CONFIGS_STORAGE_KEY = "tableauInteractif.customConfigs";
 const DEFAULT_CONFIG_STORAGE_KEY = "tableauInteractif.defaultConfig";
+const LAST_VIEW_STORAGE_KEY = "tableauInteractif.lastView";
 const favoriteColumns = loadFavoriteColumns();
 let customConfigs = loadCustomConfigs();
 
@@ -71,10 +143,38 @@ function getAllConfigs() {
 
 excelFileInput.addEventListener("change", handleFile);
 columnSearchInput.addEventListener("input", updateColumnsSelect);
-columnsSelect.addEventListener("change", updateFavoriteColumnButton);
-toggleFavoriteColumnBtn.addEventListener("click", toggleSelectedColumnFavorite);
-addColumnBtn.addEventListener("click", addSelectedColumn);
+closeColumnsBtn.addEventListener("click", closeColumnsModal);
+applyColumnsBtn.addEventListener("click", applyDraftColumns);
+clearDraftColumnsBtn.addEventListener("click", clearDraftColumns);
 resetBtn.addEventListener("click", resetFilters);
+tableViewBtn.addEventListener("click", () => setViewMode("table"));
+scatterViewBtn.addEventListener("click", () => setViewMode("scatter"));
+openAxesBtn.addEventListener("click", openAxesModal);
+invertAxesBtn.addEventListener("click", invertScatterAxes);
+trendlineToggle.addEventListener("change", () => {
+  state.scatterTrendline = trendlineToggle.checked;
+  renderScatterPlot(getFilteredRows());
+  saveLastViewConfig();
+});
+zeroLinesToggle.addEventListener("change", () => {
+  state.scatterZeroLines = zeroLinesToggle.checked;
+  renderScatterPlot(getFilteredRows());
+  saveLastViewConfig();
+});
+recommendationColorsToggle.addEventListener("change", () => {
+  state.scatterColorByRecommendation = recommendationColorsToggle.checked;
+  renderScatterPlot(getFilteredRows());
+  saveLastViewConfig();
+});
+pointSizeInput.addEventListener("input", () => {
+  state.scatterPointSize = parseFloat(pointSizeInput.value) || 5.2;
+  renderScatterPlot(getFilteredRows());
+  saveLastViewConfig();
+});
+axisSearchInput.addEventListener("input", updateAxesSelect);
+closeAxesBtn.addEventListener("click", closeAxesModal);
+applyAxesBtn.addEventListener("click", applyDraftAxes);
+clearDraftAxesBtn.addEventListener("click", clearDraftAxes);
 
 openConfigsBtn.addEventListener("click", openConfigModal);
 closeConfigsBtn.addEventListener("click", closeConfigModal);
@@ -84,13 +184,42 @@ saveConfigBtn.addEventListener("click", saveCurrentConfig);
 setDefaultConfigBtn.addEventListener("click", setSelectedConfigAsDefault);
 deleteConfigBtn.addEventListener("click", deleteSelectedCustomConfig);
 closeInfoBtn.addEventListener("click", closeInfoModal);
+openMarketsBtn.addEventListener("click", openMarketsModal);
+closeMarketsBtn.addEventListener("click", closeMarketsModal);
+applyMarketsBtn.addEventListener("click", applyMarketSelection);
+clearMarketsBtn.addEventListener("click", clearMarketSelection);
+
+marketMap.addEventListener("click", e => {
+  const node = e.target.closest(".market-region, .exchange-map-label");
+  if (node) toggleDraftExchange(node.dataset.exchange);
+});
+
+marketMap.addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const node = e.target.closest(".market-region");
+  if (!node) return;
+  e.preventDefault();
+  toggleDraftExchange(node.dataset.exchange);
+});
 
 configModalBackdrop.addEventListener("click", e => {
   if (e.target === configModalBackdrop) closeConfigModal();
 });
 
+columnsModalBackdrop.addEventListener("click", e => {
+  if (e.target === columnsModalBackdrop) closeColumnsModal();
+});
+
+axesModalBackdrop.addEventListener("click", e => {
+  if (e.target === axesModalBackdrop) closeAxesModal();
+});
+
 infoModalBackdrop.addEventListener("click", e => {
   if (e.target === infoModalBackdrop) closeInfoModal();
+});
+
+marketsModalBackdrop.addEventListener("click", e => {
+  if (e.target === marketsModalBackdrop) closeMarketsModal();
 });
 
 document.addEventListener("keydown", e => {
@@ -98,55 +227,135 @@ document.addEventListener("keydown", e => {
     closeConfigModal();
   }
 
+  if (e.key === "Escape" && !columnsModalBackdrop.classList.contains("hidden")) {
+    closeColumnsModal();
+  }
+
+  if (e.key === "Escape" && !axesModalBackdrop.classList.contains("hidden")) {
+    closeAxesModal();
+  }
+
   if (e.key === "Escape" && !infoModalBackdrop.classList.contains("hidden")) {
     closeInfoModal();
   }
+
+  if (e.key === "Escape" && !marketsModalBackdrop.classList.contains("hidden")) {
+    closeMarketsModal();
+  }
 });
+
+function startLoadingOverlay(fileName) {
+  const steps = [
+    "Loading Wealth...",
+    "Buying low-quality noise... then deleting it...",
+    "Separating signal from BLSHT...",
+    "Pricing dreams against reality...",
+    "Stacking filters, not excuses...",
+    "Preparing the tracker..."
+  ];
+  let progress = 4;
+  let stepIndex = 0;
+
+  clearInterval(loadingTimer);
+  resetLoadingOverlay();
+  loadingStartedAt = performance.now();
+  loadingOverlay.classList.remove("hidden");
+  updateLoadingOverlay(progress, `Loading wealth from ${fileName || "ton fichier"}...`, true);
+
+  loadingTimer = setInterval(() => {
+    progress = Math.min(progress + Math.random() * 2.2 + 0.7, 86);
+    stepIndex = Math.min(
+      Math.floor((progress / 88) * steps.length),
+      steps.length - 1
+    );
+    updateLoadingOverlay(progress, steps[stepIndex]);
+  }, 650);
+}
+
+function updateLoadingOverlay(progress, message, force = false) {
+  const current = parseFloat(loadingProgressBar.dataset.progress || "0");
+  const next = force ? progress : Math.max(progress, current);
+  const displayValue = Math.round(next);
+  loadingProgressBar.dataset.progress = String(displayValue);
+  loadingProgressBar.style.width = `${displayValue}%`;
+  loadingStatus.textContent = message;
+  loadingPercent.textContent = `${displayValue}%`;
+}
+
+function resetLoadingOverlay() {
+  loadingProgressBar.style.transition = "none";
+  loadingProgressBar.dataset.progress = "0";
+  loadingProgressBar.style.width = "0%";
+  loadingStatus.textContent = "Initialisation...";
+  loadingPercent.textContent = "0%";
+  loadingProgressBar.offsetHeight;
+  loadingProgressBar.style.transition = "";
+}
+
+function finishLoadingOverlay(message = "Donnees chargees") {
+  clearInterval(loadingTimer);
+  const elapsed = performance.now() - loadingStartedAt;
+  const wait = Math.max(0, 2600 - elapsed);
+
+  setTimeout(() => {
+    updateLoadingOverlay(100, message);
+
+    setTimeout(() => {
+      loadingOverlay.classList.add("hidden");
+    }, 1050);
+  }, wait);
+}
+
+function failLoadingOverlay(message) {
+  clearInterval(loadingTimer);
+  updateLoadingOverlay(100, message);
+
+  setTimeout(() => {
+    loadingOverlay.classList.add("hidden");
+  }, 900);
+}
 
 function handleFile(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  if (typeof XLSX === "undefined") {
-    alert("La librairie XLSX n'est pas chargee. Verifie ta connexion ou installe-la localement.");
+  if (typeof Worker === "undefined") {
+    alert("Ton navigateur ne supporte pas le chargement en arriere-plan.");
     return;
   }
 
-  const reader = new FileReader();
+  startLoadingOverlay(file.name);
 
-  reader.onload = evt => {
+  parseExcelFileInWorker(file)
+    .then(({ headerRow, rows }) => {
     try {
-      const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const firstSheetName = workbook.SheetNames[0];
-
-      if (!firstSheetName) {
+      if (!headerRow.length) {
+        failLoadingOverlay("Fichier vide");
         alert("Fichier vide ou illisible.");
         return;
       }
 
-      const sheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      const headerRow = jsonData[0] || [];
-
-      if (!jsonData.length || !headerRow.length) {
-        alert("Fichier vide ou illisible.");
-        return;
-      }
-
+      updateLoadingOverlay(86, "Calcul des signaux BLSHT...");
       state.allColumns = headerRow;
-      state.originalData = jsonData.slice(1);
+      state.originalData = rows;
       enrichDataWithComputedColumns();
       state.hiddenRows.clear();
       state.expandedRows.clear();
       state.currentSort = { column: null, order: null };
       state.filters = {};
+      state.exchangeFilter.clear();
+      state.scatterColumns = getDefaultScatterColumns();
 
       const configs = getAllConfigs();
+      const lastViewConfig = loadLastViewConfig();
       const defaultConfigName = getDefaultConfigName();
-      const defaultConfig = configs[defaultConfigName] || configs["Master Filtre"];
+      const defaultConfig =
+        getValidConfigForCurrentFile(lastViewConfig) ||
+        configs[defaultConfigName] ||
+        configs["Master Filtre"];
 
       if (defaultConfig) {
+        updateLoadingOverlay(92, "Application de ta strategie...");
         applyConfig(defaultConfig);
       } else {
         state.displayedColumns = state.allColumns.includes("Ticker")
@@ -162,27 +371,114 @@ function handleFile(e) {
       controls.classList.remove("hidden");
       dataTable.classList.remove("hidden");
 
+      updateLoadingOverlay(96, "Construction du cockpit...");
       updateColumnsSelect();
       render();
+      finishLoadingOverlay("Wealth tracker ready");
     } catch (error) {
       console.error(error);
+      failLoadingOverlay("Chargement interrompu");
       alert("Impossible de lire ce fichier. Verifie qu'il s'agit bien d'un fichier Excel ou CSV valide.");
     }
-  };
-
-  reader.onerror = () => {
+  })
+  .catch(error => {
+    console.error(error);
+    failLoadingOverlay("Lecture du fichier impossible");
     alert("Impossible de charger le fichier selectionne.");
-  };
+  });
+}
 
-  reader.readAsArrayBuffer(file);
+function parseExcelFileInWorker(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = evt => {
+      const worker = createExcelWorker();
+
+      worker.onmessage = event => {
+        const { type, progress, message, payload, error } = event.data;
+
+        if (type === "progress") {
+          updateLoadingOverlay(progress, message);
+          return;
+        }
+
+        worker.terminate();
+
+        if (type === "done") {
+          resolve(payload);
+        } else {
+          reject(new Error(error || "Excel worker failed"));
+        }
+      };
+
+      worker.onerror = error => {
+        worker.terminate();
+        reject(error);
+      };
+
+      updateLoadingOverlay(16, "Envoi au moteur anti-BLSHT...");
+      worker.postMessage(evt.target.result, [evt.target.result]);
+    };
+
+    reader.onerror = () => reject(new Error("FileReader failed"));
+
+    updateLoadingOverlay(8, "Ouverture du deal flow local...");
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function createExcelWorker() {
+  const workerScript = `
+    self.onmessage = event => {
+      try {
+        self.postMessage({ type: "progress", progress: 24, message: "Boot du wealth engine..." });
+        importScripts("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js");
+
+        self.postMessage({ type: "progress", progress: 38, message: "Audit du classeur..." });
+        const data = new Uint8Array(event.data);
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+
+        if (!firstSheetName) {
+          self.postMessage({ type: "error", error: "Fichier vide ou illisible." });
+          return;
+        }
+
+        self.postMessage({ type: "progress", progress: 58, message: "Extraction des lignes investissables..." });
+        const sheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const headerRow = jsonData[0] || [];
+
+        self.postMessage({ type: "progress", progress: 76, message: "Nettoyage du bruit de marche..." });
+        self.postMessage({
+          type: "done",
+          payload: {
+            headerRow,
+            rows: jsonData.slice(1)
+          }
+        });
+      } catch (error) {
+        self.postMessage({ type: "error", error: error.message || String(error) });
+      }
+    };
+  `;
+  const blob = new Blob([workerScript], { type: "application/javascript" });
+  return new Worker(URL.createObjectURL(blob));
 }
 
 function render() {
   renderHeader();
   renderFilterRow();
   updateStickyHeaderOffset();
-  renderRows(getFilteredRows());
+  const filteredRows = getFilteredRows();
+  renderRows(filteredRows);
+  renderScatterPlot(filteredRows);
+  updateViewMode();
   updateColumnsSelect();
+  updateAxesSelect();
+  updateMarketFilterButton();
+  saveLastViewConfig();
 }
 
 function updateStickyHeaderOffset() {
@@ -201,8 +497,303 @@ function updateStickyHeaderOffset() {
 function renderFilteredRowsDebounced() {
   clearTimeout(renderFilteredRowsDebounced.timer);
   renderFilteredRowsDebounced.timer = setTimeout(() => {
-    renderRows(getFilteredRows());
+    const filteredRows = getFilteredRows();
+    renderRows(filteredRows);
+    renderScatterPlot(filteredRows);
+    saveLastViewConfig();
   }, 180);
+}
+
+function setViewMode(mode) {
+  state.viewMode = mode === "scatter" ? "scatter" : "table";
+
+  if (state.viewMode === "scatter" && getScatterAxisPair().length < 2) {
+    state.scatterColumns = getDefaultScatterColumns();
+  }
+
+  render();
+}
+
+function updateViewMode() {
+  const isScatter = state.viewMode === "scatter";
+  const tableCard = dataTable.closest(".table-card");
+
+  dataTable.classList.remove("hidden");
+  dataTable.classList.toggle("filters-only", isScatter);
+  scatterView.classList.toggle("hidden", !isScatter);
+  tableCard?.classList.toggle("scatter-mode", isScatter);
+  tableViewBtn.classList.toggle("active", !isScatter);
+  scatterViewBtn.classList.toggle("active", isScatter);
+  openAxesBtn.classList.toggle("hidden", !isScatter);
+  openAxesBtn.disabled = getNumericScatterColumns().length < 2;
+}
+
+function getNumericScatterColumns() {
+  return state.allColumns.filter(
+    col =>
+      col !== "URL" &&
+      !String(col).includes("Year_") &&
+      isNumericColumn(col)
+  );
+}
+
+function getDefaultScatterColumns() {
+  const numericColumns = getNumericScatterColumns();
+  const preferred = [
+    "Mean upside (%)",
+    "P/E discount vs industry (%)",
+    "Current price",
+    "Trailing P/E ratio"
+  ].filter(col => numericColumns.includes(col));
+
+  return Array.from(new Set(preferred.concat(numericColumns))).slice(0, 2);
+}
+
+function getScatterAxisPair() {
+  return state.scatterColumns
+    .filter(col => state.allColumns.includes(col) && isNumericColumn(col))
+    .slice(0, 2);
+}
+
+function renderScatterPlot(data) {
+  scatterPlot.innerHTML = "";
+  scatterTooltip.classList.add("hidden");
+  trendlineToggle.checked = state.scatterTrendline;
+  zeroLinesToggle.checked = state.scatterZeroLines;
+  recommendationColorsToggle.checked = state.scatterColorByRecommendation;
+  pointSizeInput.value = String(state.scatterPointSize);
+  trendlineStats.textContent = "R² -";
+
+  const [xColumn, yColumn] = getScatterAxisPair();
+
+  if (!xColumn || !yColumn) {
+    scatterHint.textContent = "Choisis deux dimensions numeriques avec le bouton Axes.";
+    invertAxesBtn.disabled = true;
+    trendlineToggle.disabled = true;
+    return;
+  }
+
+  invertAxesBtn.disabled = false;
+  trendlineToggle.disabled = false;
+
+  if (!window.d3) {
+    scatterHint.textContent = "Le moteur graphique D3 n'est pas charge.";
+    trendlineToggle.disabled = true;
+    return;
+  }
+
+  const xIndex = state.allColumns.indexOf(xColumn);
+  const yIndex = state.allColumns.indexOf(yColumn);
+  const tickerIndex = getFirstColumnIndex(["Ticker", "Ticker symbol"]);
+  const recommendationIndex = getFirstColumnIndex(["Recommendation key"]);
+  const points = data
+    .map(item => {
+      const x = parseNumericValue(item.row[xIndex]);
+      const y = parseNumericValue(item.row[yIndex]);
+
+      return {
+        item,
+        x,
+        y,
+        ticker: tickerIndex >= 0 ? item.row[tickerIndex] : "",
+        recommendation: recommendationIndex >= 0 ? item.row[recommendationIndex] : ""
+      };
+    })
+    .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+  if (!points.length) {
+    scatterHint.textContent = "Aucun point exploitable avec ces deux dimensions et les filtres actuels.";
+    trendlineToggle.disabled = true;
+    return;
+  }
+
+  trendlineToggle.disabled = points.length < 2;
+
+  const width = 1080;
+  const height = 620;
+  const margin = { top: 28, right: 32, bottom: 78, left: 86 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const xExtent = getPaddedExtent(points.map(point => point.x));
+  const yExtent = getPaddedExtent(points.map(point => point.y));
+  const xScale = d3.scaleLinear().domain(xExtent).nice().range([0, plotWidth]);
+  const yScale = d3.scaleLinear().domain(yExtent).nice().range([plotHeight, 0]);
+  const svg = d3.select(scatterPlot);
+  const plot = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  plot.append("g")
+    .attr("class", "scatter-grid")
+    .attr("transform", `translate(0,${plotHeight})`)
+    .call(d3.axisBottom(xScale).ticks(8).tickSize(-plotHeight).tickFormat(""));
+
+  plot.append("g")
+    .attr("class", "scatter-grid")
+    .call(d3.axisLeft(yScale).ticks(7).tickSize(-plotWidth).tickFormat(""));
+
+  plot.append("g")
+    .attr("class", "scatter-axis")
+    .attr("transform", `translate(0,${plotHeight})`)
+    .call(d3.axisBottom(xScale).ticks(8).tickFormat(formatAxisTick));
+
+  plot.append("g")
+    .attr("class", "scatter-axis")
+    .call(d3.axisLeft(yScale).ticks(7).tickFormat(formatAxisTick));
+
+  if (state.scatterZeroLines) {
+    renderScatterZeroLines(plot, xScale, yScale, xExtent, yExtent, plotWidth, plotHeight);
+  }
+
+  plot.append("text")
+    .attr("class", "scatter-axis-label")
+    .attr("x", plotWidth / 2)
+    .attr("y", plotHeight + 54)
+    .attr("text-anchor", "middle")
+    .text(xColumn);
+
+  plot.append("text")
+    .attr("class", "scatter-axis-label")
+    .attr("x", -plotHeight / 2)
+    .attr("y", -58)
+    .attr("text-anchor", "middle")
+    .attr("transform", "rotate(-90)")
+    .text(yColumn);
+
+  plot.selectAll(".scatter-point")
+    .data(points)
+    .enter()
+    .append("circle")
+    .attr("class", point =>
+      state.scatterColorByRecommendation
+        ? `scatter-point ${getRecommendationClass(point.item.row)}`
+        : "scatter-point"
+    )
+    .attr("cx", point => xScale(point.x))
+    .attr("cy", point => yScale(point.y))
+    .attr("r", state.scatterPointSize)
+    .on("mouseenter", (event, point) => showScatterTooltip(event, point, xColumn, yColumn))
+    .on("mousemove", (event, point) => showScatterTooltip(event, point, xColumn, yColumn))
+    .on("mouseleave", () => scatterTooltip.classList.add("hidden"))
+    .on("click", (event, point) => openCompanyInfoModal(point.item.row));
+
+  if (state.scatterTrendline && points.length >= 2) {
+    renderScatterTrendline(plot, points, xScale, yScale, xExtent);
+  }
+
+  scatterHint.textContent = `${points.length}/${data.length} points affiches - X : ${xColumn} - Y : ${yColumn}`;
+}
+
+function renderScatterZeroLines(plot, xScale, yScale, xExtent, yExtent, plotWidth, plotHeight) {
+  if (xExtent[0] <= 0 && xExtent[1] >= 0) {
+    plot.append("line")
+      .attr("class", "scatter-zero-line")
+      .attr("x1", xScale(0))
+      .attr("x2", xScale(0))
+      .attr("y1", 0)
+      .attr("y2", plotHeight);
+  }
+
+  if (yExtent[0] <= 0 && yExtent[1] >= 0) {
+    plot.append("line")
+      .attr("class", "scatter-zero-line")
+      .attr("x1", 0)
+      .attr("x2", plotWidth)
+      .attr("y1", yScale(0))
+      .attr("y2", yScale(0));
+  }
+}
+
+function renderScatterTrendline(plot, points, xScale, yScale, xExtent) {
+  const regression = getLinearRegression(points);
+  if (!regression) return;
+
+  const linePoints = xExtent.map(x => ({
+    x,
+    y: regression.slope * x + regression.intercept
+  }));
+
+  plot.append("line")
+    .attr("class", "scatter-trendline")
+    .attr("x1", xScale(linePoints[0].x))
+    .attr("y1", yScale(linePoints[0].y))
+    .attr("x2", xScale(linePoints[1].x))
+    .attr("y2", yScale(linePoints[1].y));
+
+  trendlineStats.textContent = `R² ${regression.rSquared.toFixed(3)}`;
+}
+
+function getLinearRegression(points) {
+  const n = points.length;
+  const sumX = points.reduce((sum, point) => sum + point.x, 0);
+  const sumY = points.reduce((sum, point) => sum + point.y, 0);
+  const meanX = sumX / n;
+  const meanY = sumY / n;
+  const numerator = points.reduce(
+    (sum, point) => sum + (point.x - meanX) * (point.y - meanY),
+    0
+  );
+  const denominator = points.reduce(
+    (sum, point) => sum + Math.pow(point.x - meanX, 2),
+    0
+  );
+
+  if (!denominator) return null;
+
+  const slope = numerator / denominator;
+  const intercept = meanY - slope * meanX;
+  const totalSumSquares = points.reduce(
+    (sum, point) => sum + Math.pow(point.y - meanY, 2),
+    0
+  );
+  const residualSumSquares = points.reduce(
+    (sum, point) => sum + Math.pow(point.y - (slope * point.x + intercept), 2),
+    0
+  );
+  const rSquared = totalSumSquares
+    ? Math.max(0, 1 - residualSumSquares / totalSumSquares)
+    : 1;
+
+  return { slope, intercept, rSquared };
+}
+
+function getPaddedExtent(values) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  if (min === max) {
+    const pad = Math.abs(min || 1) * 0.1;
+    return [min - pad, max + pad];
+  }
+
+  const pad = (max - min) * 0.08;
+  return [min - pad, max + pad];
+}
+
+function formatAxisTick(value) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: Math.abs(value) < 10 ? 2 : 1
+  }).format(value);
+}
+
+function showScatterTooltip(event, point, xColumn, yColumn) {
+  const rect = scatterPlot.getBoundingClientRect();
+
+  scatterTooltip.innerHTML = `
+    <strong>${point.ticker || "N/A"}</strong>
+    <span>${xColumn}: ${formatNumber(point.x)}</span>
+    <span>${yColumn}: ${formatNumber(point.y)}</span>
+    ${point.recommendation ? `<span>${point.recommendation}</span>` : ""}
+  `;
+  scatterTooltip.style.left = `${event.clientX - rect.left + 14}px`;
+  scatterTooltip.style.top = `${event.clientY - rect.top + 14}px`;
+  scatterTooltip.classList.remove("hidden");
+}
+
+function invertScatterAxes() {
+  const axes = getScatterAxisPair();
+  if (axes.length < 2) return;
+
+  state.scatterColumns = [axes[1], axes[0]];
+  render();
 }
 
 function clearColumnFilter(colName) {
@@ -211,6 +802,208 @@ function clearColumnFilter(colName) {
     : { text: "" };
 
   render();
+}
+
+function getExchangeColumnIndex() {
+  return getFirstColumnIndex(["Exchange"]);
+}
+
+function getAvailableExchanges() {
+  const exchangeIndex = getExchangeColumnIndex();
+  if (exchangeIndex < 0) return new Set();
+
+  return new Set(
+    state.originalData
+      .map(row => String(row[exchangeIndex] ?? "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+}
+
+function ensureExchangeMapRendered() {
+  if (exchangeMapRendered) return Promise.resolve();
+
+  if (!window.d3 || !window.topojson) {
+    renderExchangeMapFallback("Carte indisponible : librairie de carte non chargee.");
+    return Promise.resolve();
+  }
+
+  marketMapStatus.textContent = "Chargement des frontieres europeennes...";
+
+  return fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+    .then(response => {
+      if (!response.ok) throw new Error("World atlas unavailable");
+      return response.json();
+    })
+    .then(world => {
+      const countries = topojson.feature(world, world.objects.countries).features;
+      exchangeMapFeatures = countries.filter(country =>
+        EUROPE_COUNTRY_IDS.has(normalizeCountryId(country.id))
+      );
+
+      renderExchangeMap();
+      exchangeMapRendered = true;
+    })
+    .catch(() => {
+      renderExchangeMapFallback("Carte indisponible : frontieres non chargees.");
+    });
+}
+
+function renderExchangeMap() {
+  const projection = d3.geoConicConformal()
+    .parallels([37, 62])
+    .center([6.5, 51])
+    .scale(780)
+    .translate([360, 220]);
+  const geoPath = d3.geoPath(projection);
+  const exchangeByCountry = getExchangeByCountryId();
+
+  exchangeMapCountries.innerHTML = "";
+  exchangeMapLabels.innerHTML = "";
+
+  exchangeMapFeatures.forEach(feature => {
+    const countryId = normalizeCountryId(feature.id);
+    const exchange = exchangeByCountry.get(countryId);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+    path.setAttribute("d", geoPath(feature));
+
+    if (exchange) {
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.classList.add("market-region");
+      group.dataset.exchange = exchange;
+      group.setAttribute("tabindex", "0");
+      group.setAttribute("role", "button");
+      group.setAttribute(
+        "aria-label",
+        `${EXCHANGE_COUNTRIES[exchange].country} - ${exchange}`
+      );
+      group.appendChild(path);
+      exchangeMapCountries.appendChild(group);
+      addExchangeMapLabel(exchange, projection(EXCHANGE_COUNTRIES[exchange].lonLat));
+    } else {
+      path.classList.add("map-country", "map-country-soft");
+      exchangeMapCountries.appendChild(path);
+    }
+  });
+}
+
+function addExchangeMapLabel(exchange, centroid) {
+  const [offsetX, offsetY] = EXCHANGE_COUNTRIES[exchange].labelOffset;
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+
+  text.classList.add("exchange-map-label");
+  text.dataset.exchange = exchange;
+  text.setAttribute("x", centroid[0] + offsetX);
+  text.setAttribute("y", centroid[1] + offsetY);
+  text.textContent = exchange;
+
+  exchangeMapLabels.appendChild(text);
+}
+
+function renderExchangeMapFallback(message) {
+  exchangeMapCountries.innerHTML = "";
+  exchangeMapLabels.innerHTML = "";
+  exchangeMapRendered = true;
+  marketMapStatus.textContent = message;
+}
+
+function getExchangeByCountryId() {
+  return new Map(
+    Object.entries(EXCHANGE_COUNTRIES).map(([exchange, config]) => [
+      config.countryId,
+      exchange
+    ])
+  );
+}
+
+function normalizeCountryId(countryId) {
+  return String(countryId).padStart(3, "0");
+}
+
+function openMarketsModal() {
+  lastFocusedElement = document.activeElement;
+  const available = getAvailableExchanges();
+  draftExchangeFilter = new Set(
+    Array.from(state.exchangeFilter).filter(exchange => available.has(exchange))
+  );
+  marketsModalBackdrop.classList.remove("hidden");
+  updateMarketMap();
+  ensureExchangeMapRendered().then(updateMarketMap);
+  applyMarketsBtn.focus();
+}
+
+function closeMarketsModal() {
+  marketsModalBackdrop.classList.add("hidden");
+  lastFocusedElement?.focus();
+}
+
+function toggleDraftExchange(exchange) {
+  if (!exchange) return;
+
+  const normalized = exchange.toUpperCase();
+  const available = getAvailableExchanges();
+
+  if (!available.has(normalized)) return;
+
+  if (draftExchangeFilter.has(normalized)) {
+    draftExchangeFilter.delete(normalized);
+  } else {
+    draftExchangeFilter.add(normalized);
+  }
+
+  updateMarketMap();
+}
+
+function applyMarketSelection() {
+  const available = getAvailableExchanges();
+  state.exchangeFilter = new Set(
+    Array.from(draftExchangeFilter).filter(exchange => available.has(exchange))
+  );
+  closeMarketsModal();
+  render();
+}
+
+function clearMarketSelection() {
+  draftExchangeFilter.clear();
+  updateMarketMap();
+}
+
+function updateMarketMap() {
+  const available = getAvailableExchanges();
+  const active = Array.from(draftExchangeFilter);
+
+  marketMap.querySelectorAll(".market-region").forEach(node => {
+    const exchange = node.dataset.exchange.toUpperCase();
+    const isAvailable = available.has(exchange);
+    const isSelected = draftExchangeFilter.has(exchange);
+
+    node.classList.toggle("exchange-available", isAvailable);
+    node.classList.toggle("exchange-selected", isSelected);
+    node.classList.toggle("exchange-disabled", !isAvailable);
+    node.setAttribute("aria-pressed", String(isSelected));
+  });
+
+  marketMap.querySelectorAll(".exchange-map-label").forEach(label => {
+    const exchange = label.dataset.exchange.toUpperCase();
+    const isAvailable = available.has(exchange);
+    const isSelected = draftExchangeFilter.has(exchange);
+
+    label.classList.toggle("exchange-available", isAvailable);
+    label.classList.toggle("exchange-selected", isSelected);
+    label.classList.toggle("exchange-disabled", !isAvailable);
+  });
+
+  marketMapStatus.textContent = active.length
+    ? `Selection actuelle : ${active.join(", ")}`
+    : "Aucun exchange selectionne. Les pays disponibles dependent du fichier importe.";
+}
+
+function updateMarketFilterButton() {
+  const count = state.exchangeFilter.size;
+  const hasAvailableMarkets = getAvailableExchanges().size > 0;
+  openMarketsBtn.textContent = count ? `Exchange (${count})` : "Exchange";
+  openMarketsBtn.disabled = !hasAvailableMarkets;
+  openMarketsBtn.classList.toggle("favorite-active", count > 0);
 }
 
 function getRecommendationClass(row) {
@@ -259,6 +1052,31 @@ function saveCustomConfigs() {
     CUSTOM_CONFIGS_STORAGE_KEY,
     JSON.stringify(customConfigs)
   );
+}
+
+function loadLastViewConfig() {
+  try {
+    const stored = localStorage.getItem(LAST_VIEW_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastViewConfig() {
+  if (!state.allColumns.length || !state.displayedColumns.length) return;
+
+  localStorage.setItem(
+    LAST_VIEW_STORAGE_KEY,
+    JSON.stringify(createConfigFromCurrentState())
+  );
+}
+
+function getValidConfigForCurrentFile(config) {
+  if (!config?.columns?.length) return null;
+
+  const hasMatchingColumn = config.columns.some(col => state.allColumns.includes(col));
+  return hasMatchingColumn ? config : null;
 }
 
 function getDefaultConfigName() {
@@ -465,7 +1283,11 @@ function renderHeader() {
   });
 
   const detailsTh = document.createElement("th");
-  detailsTh.textContent = "Details";
+  const addColumnsHeaderBtn = button("+", "table-add-columns-btn", openColumnsModal);
+  addColumnsHeaderBtn.title = "Ajouter des colonnes";
+  addColumnsHeaderBtn.setAttribute("aria-label", "Ajouter des colonnes");
+  addColumnsHeaderBtn.disabled = !getAvailableColumnsToAdd().length;
+  detailsTh.appendChild(addColumnsHeaderBtn);
   row.appendChild(detailsTh);
 
   tableHeader.appendChild(row);
@@ -527,6 +1349,11 @@ function renderFilterRow() {
 
 function renderRows(data) {
   tableBody.innerHTML = "";
+
+  if (state.viewMode === "scatter") {
+    resultCount.textContent = `${data.length} resultat(s)`;
+    return;
+  }
 
   if (!data.length) {
     const emptyTr = document.createElement("tr");
@@ -590,10 +1417,17 @@ function renderRows(data) {
 }
 
 function getFilteredRows() {
+  const exchangeIndex = getExchangeColumnIndex();
+
   let rows = state.originalData
     .map((row, index) => ({ row, index }))
     .filter(item => {
       if (state.hiddenRows.has(item.index)) return false;
+
+      if (state.exchangeFilter.size && exchangeIndex >= 0) {
+        const exchange = String(item.row[exchangeIndex] ?? "").trim().toUpperCase();
+        if (!state.exchangeFilter.has(exchange)) return false;
+      }
 
       return state.displayedColumns.every(colName => {
         const colIndex = state.allColumns.indexOf(colName);
@@ -675,6 +1509,26 @@ function applyConfig(config, options = {}) {
   if (!options.skipSort && config.sort) {
     state.currentSort = config.sort;
   }
+
+  const availableExchanges = getAvailableExchanges();
+  const configuredExchanges = Array.isArray(config.exchangeFilter)
+    ? config.exchangeFilter.map(exchange => String(exchange).toUpperCase())
+    : [];
+
+  state.exchangeFilter = new Set(
+    configuredExchanges.filter(exchange => availableExchanges.has(exchange))
+  );
+
+  state.scatterColumns = Array.isArray(config.scatterColumns)
+    ? config.scatterColumns.filter(col => state.allColumns.includes(col) && isNumericColumn(col)).slice(0, 2)
+    : getDefaultScatterColumns();
+  state.viewMode = config.viewMode === "scatter" ? "scatter" : "table";
+  state.scatterTrendline = Boolean(config.scatterTrendline);
+  state.scatterZeroLines = config.scatterZeroLines !== false;
+  state.scatterColorByRecommendation = config.scatterColorByRecommendation !== false;
+  state.scatterPointSize = Number.isFinite(Number(config.scatterPointSize))
+    ? Number(config.scatterPointSize)
+    : 5.2;
 
   state.hiddenRows.clear();
   state.expandedRows.clear();
@@ -764,7 +1618,14 @@ function createConfigFromCurrentState() {
   return {
     columns: state.displayedColumns.slice(),
     filters,
-    sort: { ...state.currentSort }
+    sort: { ...state.currentSort },
+    exchangeFilter: Array.from(state.exchangeFilter),
+    viewMode: state.viewMode,
+    scatterColumns: state.scatterColumns.slice(),
+    scatterTrendline: state.scatterTrendline,
+    scatterZeroLines: state.scatterZeroLines,
+    scatterColorByRecommendation: state.scatterColorByRecommendation,
+    scatterPointSize: state.scatterPointSize
   };
 }
 
@@ -793,19 +1654,6 @@ function deleteSelectedCustomConfig() {
   updateConfigPreview();
 }
 
-function addSelectedColumn() {
-  const col = columnsSelect.value;
-  if (!col) return;
-
-  state.displayedColumns.push(col);
-
-  state.filters[col] = isNumericColumn(col)
-    ? { minVal: "", maxVal: "" }
-    : { text: "" };
-
-  render();
-}
-
 function resetFilters() {
   state.filters = {};
 
@@ -818,71 +1666,136 @@ function resetFilters() {
   state.hiddenRows.clear();
   state.expandedRows.clear();
   state.currentSort = { column: null, order: null };
+  state.exchangeFilter.clear();
 
   render();
 }
 
-function updateColumnsSelect() {
-  const previousValue = columnsSelect.value;
-  const query = columnSearchInput.value.trim().toLowerCase();
-  columnsSelect.innerHTML = "";
+function openColumnsModal() {
+  lastFocusedElement = document.activeElement;
+  draftColumnsToAdd.clear();
+  columnSearchInput.value = "";
+  columnsModalBackdrop.classList.remove("hidden");
+  updateColumnsSelect();
+  columnSearchInput.focus();
+}
 
-  const remaining = state.allColumns.filter(
+function closeColumnsModal() {
+  columnsModalBackdrop.classList.add("hidden");
+  lastFocusedElement?.focus();
+}
+
+function getAvailableColumnsToAdd() {
+  return state.allColumns.filter(
     col =>
       col !== "URL" &&
       !String(col).includes("Year_") &&
-      !state.displayedColumns.includes(col) &&
-      (!query || String(col).toLowerCase().includes(query))
+      !state.displayedColumns.includes(col)
   );
+}
 
-  const favorites = remaining.filter(col => favoriteColumns.has(col));
-  const others = remaining.filter(col => !favoriteColumns.has(col));
+function updateColumnsSelect() {
+  const query = columnSearchInput.value.trim().toLowerCase();
+  const remaining = getAvailableColumnsToAdd();
+  const filtered = remaining.filter(
+    col => !query || String(col).toLowerCase().includes(query)
+  );
+  const favorites = filtered.filter(col => favoriteColumns.has(col));
+  const others = filtered.filter(col => !favoriteColumns.has(col));
+  const orderedColumns = favorites.concat(others);
 
-  appendColumnOptions("Favoris", favorites);
-  appendColumnOptions(favorites.length ? "Toutes les colonnes" : "", others);
+  if (columnsModalBackdrop.classList.contains("hidden")) return;
 
-  if (remaining.includes(previousValue)) {
-    columnsSelect.value = previousValue;
+  columnOptionsList.innerHTML = "";
+  selectedColumnsList.innerHTML = "";
+
+  columnPickerStatus.textContent = `${orderedColumns.length}/${remaining.length}`;
+
+  if (!orderedColumns.length) {
+    const empty = document.createElement("p");
+    empty.className = "columns-empty";
+    empty.textContent = "Aucune colonne disponible.";
+    columnOptionsList.appendChild(empty);
+  } else {
+    orderedColumns.forEach(col => {
+      columnOptionsList.appendChild(createColumnOptionRow(col));
+    });
   }
 
-  const hasRemaining = Boolean(remaining.length);
-  columnsSelect.disabled = !hasRemaining;
-  addColumnBtn.disabled = !hasRemaining;
-  toggleFavoriteColumnBtn.disabled = !hasRemaining;
-  updateFavoriteColumnButton();
+  if (!draftColumnsToAdd.size) {
+    const empty = document.createElement("p");
+    empty.className = "columns-empty";
+    empty.textContent = "Coche une ou plusieurs colonnes.";
+    selectedColumnsList.appendChild(empty);
+  } else {
+    Array.from(draftColumnsToAdd).forEach(col => {
+      selectedColumnsList.appendChild(createSelectedColumnPill(col));
+    });
+  }
+
+  applyColumnsBtn.disabled = !draftColumnsToAdd.size;
+  clearDraftColumnsBtn.disabled = !draftColumnsToAdd.size;
 }
 
-function appendColumnOptions(label, columns) {
-  if (!columns.length) return;
+function createColumnOptionRow(col) {
+  const row = document.createElement("label");
+  row.className = "column-option-row";
 
-  const parent = label ? document.createElement("optgroup") : columnsSelect;
-  if (label) parent.label = label;
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = draftColumnsToAdd.has(col);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) {
+      draftColumnsToAdd.add(col);
+    } else {
+      draftColumnsToAdd.delete(col);
+    }
 
-  columns.forEach(col => {
-    const option = document.createElement("option");
-    option.value = col;
-    option.textContent = favoriteColumns.has(col) ? `★ ${col}` : col;
-    parent.appendChild(option);
+    updateColumnsSelect();
   });
 
-  if (label) columnsSelect.appendChild(parent);
-}
+  const name = document.createElement("span");
+  name.textContent = col;
 
-function updateFavoriteColumnButton() {
-  const col = columnsSelect.value;
   const isFavorite = favoriteColumns.has(col);
 
-  toggleFavoriteColumnBtn.textContent = isFavorite ? "★" : "☆";
-  toggleFavoriteColumnBtn.classList.toggle("favorite-active", isFavorite);
-  toggleFavoriteColumnBtn.title = isFavorite
+  if (isFavorite) {
+    row.classList.add("column-option-favorite");
+  }
+
+  const favoriteBtn = button(
+    isFavorite ? "★" : "☆",
+    "column-favorite-btn",
+    event => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleColumnFavorite(col);
+    }
+  );
+  favoriteBtn.classList.toggle("favorite-active", isFavorite);
+  favoriteBtn.title = isFavorite
     ? "Retirer des favoris"
     : "Ajouter aux favoris";
+
+  row.append(checkbox, name, favoriteBtn);
+  return row;
 }
 
-function toggleSelectedColumnFavorite() {
-  const col = columnsSelect.value;
-  if (!col) return;
+function createSelectedColumnPill(col) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "selected-column-pill";
+  pill.textContent = `${col} x`;
+  pill.title = "Retirer de la selection";
+  pill.addEventListener("click", () => {
+    draftColumnsToAdd.delete(col);
+    updateColumnsSelect();
+  });
 
+  return pill;
+}
+
+function toggleColumnFavorite(col) {
   if (favoriteColumns.has(col)) {
     favoriteColumns.delete(col);
   } else {
@@ -891,6 +1804,146 @@ function toggleSelectedColumnFavorite() {
 
   saveFavoriteColumns();
   updateColumnsSelect();
+}
+
+function clearDraftColumns() {
+  draftColumnsToAdd.clear();
+  updateColumnsSelect();
+}
+
+function applyDraftColumns() {
+  const columns = Array.from(draftColumnsToAdd).filter(
+    col => state.allColumns.includes(col) && !state.displayedColumns.includes(col)
+  );
+
+  columns.forEach(col => {
+    state.displayedColumns.push(col);
+    state.filters[col] = isNumericColumn(col)
+      ? { minVal: "", maxVal: "" }
+      : { text: "" };
+  });
+
+  draftColumnsToAdd.clear();
+  closeColumnsModal();
+
+  if (columns.length) {
+    render();
+  }
+}
+
+function openAxesModal() {
+  lastFocusedElement = document.activeElement;
+  draftAxisColumns = new Set(getScatterAxisPair());
+  axisSearchInput.value = "";
+  axesModalBackdrop.classList.remove("hidden");
+  updateAxesSelect();
+  axisSearchInput.focus();
+}
+
+function closeAxesModal() {
+  axesModalBackdrop.classList.add("hidden");
+  lastFocusedElement?.focus();
+}
+
+function updateAxesSelect() {
+  const numericColumns = getNumericScatterColumns();
+
+  if (axesModalBackdrop.classList.contains("hidden")) {
+    return;
+  }
+
+  const query = axisSearchInput.value.trim().toLowerCase();
+  const filtered = numericColumns.filter(
+    col => !query || String(col).toLowerCase().includes(query)
+  );
+
+  axisOptionsList.innerHTML = "";
+  selectedAxesList.innerHTML = "";
+  axisPickerStatus.textContent = `${filtered.length}/${numericColumns.length}`;
+
+  if (!filtered.length) {
+    const empty = document.createElement("p");
+    empty.className = "columns-empty";
+    empty.textContent = "Aucune dimension numerique disponible.";
+    axisOptionsList.appendChild(empty);
+  } else {
+    filtered.forEach(col => {
+      axisOptionsList.appendChild(createAxisOptionRow(col));
+    });
+  }
+
+  if (!draftAxisColumns.size) {
+    const empty = document.createElement("p");
+    empty.className = "columns-empty";
+    empty.textContent = "Choisis deux dimensions.";
+    selectedAxesList.appendChild(empty);
+  } else {
+    Array.from(draftAxisColumns).forEach(col => {
+      selectedAxesList.appendChild(createAxisPill(col));
+    });
+  }
+
+  applyAxesBtn.disabled = draftAxisColumns.size !== 2;
+  clearDraftAxesBtn.disabled = !draftAxisColumns.size;
+}
+
+function createAxisOptionRow(col) {
+  const row = document.createElement("label");
+  row.className = "column-option-row";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = draftAxisColumns.has(col);
+  checkbox.disabled = !checkbox.checked && draftAxisColumns.size >= 2;
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) {
+      draftAxisColumns.add(col);
+    } else {
+      draftAxisColumns.delete(col);
+    }
+
+    updateAxesSelect();
+  });
+
+  const name = document.createElement("span");
+  name.textContent = col;
+
+  const marker = document.createElement("span");
+  marker.className = "axis-order-marker";
+  marker.textContent = draftAxisColumns.has(col)
+    ? String(Array.from(draftAxisColumns).indexOf(col) + 1)
+    : "";
+
+  row.append(checkbox, name, marker);
+  return row;
+}
+
+function createAxisPill(col) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "selected-column-pill";
+  pill.textContent = `${col} x`;
+  pill.title = "Retirer de la selection";
+  pill.addEventListener("click", () => {
+    draftAxisColumns.delete(col);
+    updateAxesSelect();
+  });
+
+  return pill;
+}
+
+function clearDraftAxes() {
+  draftAxisColumns.clear();
+  updateAxesSelect();
+}
+
+function applyDraftAxes() {
+  if (draftAxisColumns.size !== 2) return;
+
+  state.scatterColumns = Array.from(draftAxisColumns);
+  state.viewMode = "scatter";
+  closeAxesModal();
+  render();
 }
 
 function toggleDetails(mainRow, item) {
@@ -1161,7 +2214,7 @@ function openCompanyInfoModal(row) {
   infoModalBackdrop.classList.remove("hidden");
   closeInfoBtn.focus();
 
-  fetchCompanyActivitySummary({ ticker, companyName })
+  fetchCompanyActivitySummary({ ticker, companyName, sector, industry })
     .then(result => {
       if (result.summary) {
         infoStatus.textContent = result.source || "Resume trouve";
@@ -1219,32 +2272,62 @@ function getRowValueByNames(row, names) {
   return index >= 0 ? row[index] : "";
 }
 
-function fetchCompanyActivitySummary({ ticker, companyName }) {
-  const query = [companyName, ticker].filter(Boolean).join(" ");
+function fetchCompanyActivitySummary({ ticker, companyName, sector, industry }) {
+  const queries = buildCompanySearchQueries({ ticker, companyName, sector, industry });
 
-  if (!query) {
+  if (!queries.length) {
     return Promise.resolve({ summary: "", source: "", url: "" });
   }
 
-  return searchWikipediaPage(query)
-    .then(pageTitle => {
-      if (!pageTitle && companyName && companyName !== ticker) {
-        return searchWikipediaPage(companyName);
-      }
-
-      return pageTitle;
+  return searchWikipediaCandidates(queries)
+    .then(candidates => {
+      if (!candidates.length) return [];
+      return Promise.all(candidates.slice(0, 6).map(fetchWikipediaSummary));
     })
-    .then(pageTitle => {
-      if (!pageTitle) return { summary: "", source: "", url: "" };
-      return fetchWikipediaSummary(pageTitle);
+    .then(results => {
+      const ranked = (results || [])
+        .filter(result => isLikelyCompanySummary(result, { ticker, companyName }))
+        .map(result => ({
+          ...result,
+          score: scoreCompanySummary(result, { ticker, companyName, sector, industry })
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      return ranked[0]?.score > 0 ? ranked[0] : { summary: "", source: "", url: "" };
     });
 }
 
-function searchWikipediaPage(query) {
+function buildCompanySearchQueries({ ticker, companyName, sector, industry }) {
+  const cleanTicker = String(ticker || "").trim();
+  const cleanName = String(companyName || "").trim();
+  const context = [industry, sector].filter(Boolean).join(" ");
+
+  return Array.from(new Set([
+    cleanName ? `${cleanName} company` : "",
+    cleanName && cleanTicker ? `${cleanName} ${cleanTicker} company` : "",
+    cleanName && context ? `${cleanName} ${context} company` : "",
+    cleanTicker ? `${cleanTicker} stock company` : "",
+    cleanName
+  ].filter(Boolean)));
+}
+
+function searchWikipediaCandidates(queries) {
+  return queries.reduce(
+    (chain, query) =>
+      chain.then(candidates =>
+        candidates.length >= 6
+          ? candidates
+          : searchWikipediaQuery(query).then(next => mergeWikipediaCandidates(candidates, next))
+      ),
+    Promise.resolve([])
+  );
+}
+
+function searchWikipediaQuery(query) {
   const params = new URLSearchParams({
     action: "opensearch",
     search: query,
-    limit: "1",
+    limit: "4",
     namespace: "0",
     redirects: "resolve",
     format: "json",
@@ -1253,7 +2336,21 @@ function searchWikipediaPage(query) {
 
   return fetch(`https://en.wikipedia.org/w/api.php?${params.toString()}`)
     .then(response => response.json())
-    .then(data => data?.[1]?.[0] || "");
+    .then(data => data?.[1] || [])
+    .catch(() => []);
+}
+
+function mergeWikipediaCandidates(existing, next) {
+  const seen = new Set(existing);
+
+  next.forEach(title => {
+    if (!seen.has(title)) {
+      seen.add(title);
+      existing.push(title);
+    }
+  });
+
+  return existing;
 }
 
 function fetchWikipediaSummary(pageTitle) {
@@ -1270,11 +2367,98 @@ function fetchWikipediaSummary(pageTitle) {
       }
 
       return {
+        title: data.title || pageTitle,
+        type: data.type || "",
+        description: data.description || "",
         summary: data.extract,
         source: "Source : Wikipedia",
         url: data.content_urls?.desktop?.page || ""
       };
     });
+}
+
+function isLikelyCompanySummary(result, { ticker, companyName }) {
+  if (!result?.summary || result.type === "disambiguation") return false;
+
+  const haystack = normalizeSearchText([
+    result.title,
+    result.description,
+    result.summary
+  ].join(" "));
+  const nameTokens = getMeaningfulTokens(companyName);
+  const tickerToken = normalizeSearchText(ticker);
+  const companyHints = [
+    "company",
+    "corporation",
+    "group",
+    "holding",
+    "manufacturer",
+    "provider",
+    "retailer",
+    "bank",
+    "multinational",
+    "public",
+    "publicly traded",
+    "software",
+    "pharmaceutical",
+    "semiconductor",
+    "stock exchange",
+    "listed"
+  ];
+
+  const hasNameMatch = nameTokens.some(token => haystack.includes(token));
+  const hasTickerMatch = tickerToken && haystack.includes(tickerToken);
+  const hasCompanyHint = companyHints.some(hint => haystack.includes(hint));
+
+  return (hasNameMatch || hasTickerMatch) && hasCompanyHint;
+}
+
+function scoreCompanySummary(result, { ticker, companyName, sector, industry }) {
+  const haystack = normalizeSearchText([
+    result.title,
+    result.description,
+    result.summary
+  ].join(" "));
+  const title = normalizeSearchText(result.title);
+  const nameTokens = getMeaningfulTokens(companyName);
+  const tickerToken = normalizeSearchText(ticker);
+  let score = 0;
+
+  nameTokens.forEach(token => {
+    if (title.includes(token)) score += 5;
+    if (haystack.includes(token)) score += 2;
+  });
+
+  if (tickerToken && title.includes(tickerToken)) score += 4;
+  if (tickerToken && haystack.includes(tickerToken)) score += 1;
+
+  getMeaningfulTokens(industry).forEach(token => {
+    if (haystack.includes(token)) score += 1;
+  });
+
+  getMeaningfulTokens(sector).forEach(token => {
+    if (haystack.includes(token)) score += 1;
+  });
+
+  if (haystack.includes("company")) score += 2;
+  if (haystack.includes("stock exchange") || haystack.includes("listed")) score += 2;
+
+  return score;
+}
+
+function getMeaningfulTokens(value) {
+  return normalizeSearchText(value)
+    .split(" ")
+    .filter(token => token.length >= 3 && !["the", "and", "inc", "ltd", "plc", "sa", "se", "nv"].includes(token));
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function closeInfoModal() {

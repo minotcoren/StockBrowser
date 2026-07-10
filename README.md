@@ -1,6 +1,6 @@
-# StockBrowser
+﻿# BLSHT
 
-Application web statique pour importer un fichier Excel/CSV de donnees financieres, filtrer les actions, comparer des metriques par industrie et explorer les details annuels.
+Buy Low Sell High Tracker: application web statique pour importer un fichier Excel/CSV de donnees financieres, filtrer les actions, comparer des metriques par industrie et explorer les details annuels.
 
 ## Utilisation
 
